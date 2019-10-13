@@ -8,6 +8,7 @@ from ML_Methods import *
 from Compiling_Results import *
 import cProfile
 import warnings
+import os
 warnings.filterwarnings("ignore")
 
 ### Options ##############################################################
@@ -15,6 +16,8 @@ ML = 'Classification' # choose 'Regression' or 'Classification'
 ##########################################################################
 with open('ORCA_data/scenario_names_all.txt') as f: # change file name here to run different scenarios
 	scenarios = f.read().splitlines()
+os.makedirs('Results_Raw_Outputs',exist_ok=True)
+
 # scenarios = ['None'] # Use this for training. It runs all of the scenarios together instead of leave-one-out
 
 Leads = ['L00','L01','L05','L10','L20']
@@ -100,11 +103,8 @@ for sc in scenarios:
 
 ### Plotting ### Note that additional plots (not used in final paper) are available in Compiling_Results.py
 date = '19-19-19' # set a real date for plot file name
-save = False # choose to save (True) or not save (False) plots 
-try:
-	#open All_Figures folder
-except:
-	#make All_Figures folder
+save = False # choose to save (True) or not save (False) plots
+os.makedirs('All_Figures',exist_ok=True)
 
 MAP(date,save=save) # PAPER FIGURE 1
 CLASSIFICATION__Time_vs_TPR_RCP(date,save=save)

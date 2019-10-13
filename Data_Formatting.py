@@ -2,10 +2,14 @@
 
 import numpy as np
 import pandas as pd
+import os
 
 Reliability = ['Annual_Rolling_Reliability_30yr'] # you can also run this code for 10, 20, 40, and 50 -year rolling reliability
 Location_of_Input_Data = 'ORCA_data/ORCA_inputs_19-06-03' # change this if necessary
 Location_to_Save_Matrices = 'Data_Matrices_19-06-03' # change this if necessary
+
+os.makedirs(Results_Raw_Outputs,exist_ok=True)
+os.makedirs(Location_of_Input_Data,exist_ok=True)
 
 new_cols = ['TLG_fnf','FOL_fnf','MRC_fnf','MIL_fnf','NML_fnf','ORO_fnf','MKM_fnf','BND_fnf','NHG_fnf','SHA_fnf','YRS_fnf',
 			'BND_swe','ORO_swe','YRS_swe','FOL_swe',
