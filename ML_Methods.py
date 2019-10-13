@@ -1,3 +1,5 @@
+### This script has all of the machine learning methods and other tools that calculate results ###
+
 import numpy as np
 from sklearn.metrics import mean_squared_error,r2_score
 from sklearn.preprocessing import PolynomialFeatures
@@ -5,8 +7,12 @@ from scipy import stats
 import statsmodels.api as sm
 import math
 import pandas as pd
+import os
+import matplotlib.pyplot as plt
 
+Location_to_Save_Matrices = 'Data_Matrices_19-06-03' # change this if necessary
 
+### Multiple r**2 and error metric calculations ###
 def get_r2_python(x, y):
     n = len(x)
     x_bar = sum(x)/n
@@ -18,25 +24,103 @@ def get_r2_python(x, y):
     r = sum(zxi*zyi for zxi, zyi in zip(zx, zy))/(n-1)
     return r**2
 
+def get_adjusted_r2(k,y,r2):
+	n = len(y) # number of points in data sample
+	adj_r2 = 1 - ((1-r2)*(n-1))/(n-k-1)
+	return adj_r2
+
+def get_mae_mape_mpe(actual,predicted):
+	n = len(actual)
+	mae_sum = 0
+	mape_sum = 0
+	mpe_sum = 0
+	for x in range(n):
+		mae_sum += abs(actual[x] - predicted[x])
+		mape_sum += (abs(actual[x] - predicted[x]) / actual[x])
+		mpe_sum += ((actual[x] - predicted[x]) / actual[x])
+	mpe = mpe_sum / n
+	mape = mape_sum / n
+	mae = mae_sum / n
+	return mae,mape,mpe
+
+
+def classifier_measure(actual,predicted):
+	TP = 0
+	FP = 0
+	TN = 0
+	FN = 0
+	for i in range(len(actual)):
+		if actual[i]==predicted[i]==True:
+			TP += 1
+		if actual[i]==predicted[i]==False:
+			TN += 1
+		if predicted[i]==True and actual[i]!=predicted[i]:
+			FP += 1
+		if predicted[i]==False and actual[i]!=predicted[i]:
+			FN += 1
+	return(TP,FP,TN,FN)
+
+def classifier_measure_timeseries(actual,predicted):
+	TP = []
+	FP = []
+	TN = []
+	FN = []
+	
+	for i in range(len(actual)):
+		if actual[i]==predicted[i]==True:
+			TP.append(1)
+			TN.append(0)
+			FP.append(0)
+			FN.append(0)
+		if actual[i]==predicted[i]==False:
+			TP.append(0)
+			TN.append(1)
+			FP.append(0)
+			FN.append(0)
+		if predicted[i]==True and actual[i]!=predicted[i]:
+			TP.append(0)
+			TN.append(0)
+			FP.append(1)
+			FN.append(0)
+		if predicted[i]==False and actual[i]!=predicted[i]:
+			TP.append(0)
+			TN.append(0)
+			FP.append(0)
+			FN.append(1)
+	return(TP,FP,TN,FN)
+
 
 ### Classification ###
-def Classification(data,solution,threshold,method,result,test_set):
+def Classification(data,solution,test_data,test_solution,threshold,method):
+	## Fix data structure ##
 	data = data.values
-	solution = solution.values 
+	solution = solution.values
+	test_data = test_data.values
+	test_solution = test_solution.values
 
-	if method == 'ner_nbr': # K Nearest Neighbors
+	## List of Method Options with Initialization ##
+	if method == 'nst_nbr': # K Nearest Neighbors
 		from sklearn.neighbors import KNeighborsClassifier
 		clsfr = KNeighborsClassifier()
+	elif method == 'log_reg': # Logistic Regression
+		from sklearn.linear_model import LogisticRegression
+		clsfr = LogisticRegression()
 	elif method == 'svm_lin': # Linear SVM
-		from sklearn.svm import SVC
+		from sklearn.svm import SVC ##### maybe switch to LinearSVC??
 		clsfr = SVC(kernel='linear') # has parameter C=0.025
 	elif method == 'svm_2nd': # RBF SVM
+		from sklearn.svm import SVC
+		clsfr = SVC(kernel='poly',degree=2) # gamma=2
+	elif method == 'svm_3rd': # RBF SVM
+		from sklearn.svm import SVC
+		clsfr = SVC(kernel='poly',degree=3) # gamma=2
+	elif method == 'svm_rbf': # RBF SVM
 		from sklearn.svm import SVC
 		clsfr = SVC() # gamma=2
 	elif method == 'gsn_prc': # Gaussian Process
 		from sklearn.gaussian_process import GaussianProcessClassifier
 		from sklearn.gaussian_process.kernels import RBF
-		clsfr = GaussianProcessClassifier(1.0 * RBF(1.0)) # what is this??
+		clsfr = GaussianProcessClassifier() # what is this??
 	elif method == 'dcn_tre': # Decision Tree
 		from sklearn.tree import DecisionTreeClassifier
 		clsfr = DecisionTreeClassifier()
@@ -55,58 +139,60 @@ def Classification(data,solution,threshold,method,result,test_set):
 	elif method == 'qdr_dsc': # QDA
 		from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
 		clsfr = QuadraticDiscriminantAnalysis()
+	elif method == 'grd_bst': # Gradient Boosting Classifier
+		from sklearn.ensemble import GradientBoostingClassifier
+		clsfr = GradientBoostingClassifier(random_state=3)
+	elif method == 'rad_nbr_uni': # Radius Neighbors Classifier
+		from sklearn.neighbors import RadiusNeighborsClassifier
+		clsfr = RadiusNeighborsClassifier(weights='uniform')
+	elif method == 'rad_nbr_dst': # Radius Neighbors Classifier
+		from sklearn.neighbors import RadiusNeighborsClassifier
+		clsfr = RadiusNeighborsClassifier(weights='distance')
 	else:
-		print('Error: Regression method not recognized.\nPlease pick a valid method key (example: xxx_xxx).')
+		print('Error: Classification method not recognized. Please pick a valid method key (example: xxx_xxx).')
 
+	## Preprocessing and Setup ##
 	from sklearn.preprocessing import StandardScaler
 	scaler = StandardScaler()
 	data = scaler.fit_transform(data)
+	scaler = StandardScaler()
+	test_data = scaler.fit_transform(test_data)
+	solution_binary = solution>=threshold
+	test_solution_binary = test_solution>=threshold
+	from sklearn.metrics import precision_recall_curve
+	from sklearn.metrics import roc_curve
+	solution_binary = solution_binary.reshape(-1,)
+	test_solution_binary = test_solution_binary.reshape(-1,)
 
-	if test_set == False:
-	# 	if method == 'ply_reg':
-	# 		data = poly_features.fit_transform(data)
+	## Fit the Data ##
+	try: # this is necessary because some of the methods won't be able to fit if given weird parameters/data
+		clsfr.fit(data,solution_binary)
+	except:
+		print('Classifier Error:',method,threshold)
 
-		solution = solution.reshape(-1,)
-		clsfr.fit(data,solution)
-		predictions = clsfr.predict(data)
-		reg_mse = mean_squared_error(solution,predictions)
-		R2 = get_r2_python(solution,predictions)
-		# if method == 'rdm_for':
-		# 	features = reg.feature_importances_
-	
-	elif test_set == True:
-		from sklearn.model_selection import train_test_split
-		train_data,test_data,train_solution,test_solution = train_test_split(data,solution,test_size=0.3,random_state=0)
-		# if method == 'ply_reg':
-		# 	train_data = poly_features.fit_transform(train_data)
-		# 	new_axis = len(train_solution)
-		# 	train_data = train_data.reshape(new_axis,-1)
-		# 	test_data = poly_features.transform(test_data)
+	## Predict and Save to Matrix ##
+	try:
+		test_predictions = clsfr.predict(test_data)
+		Matrix_to_save = pd.DataFrame()
+		Matrix_to_save['Solution'] = test_solution_binary
+		Matrix_to_save['Predictions'] = test_predictions
+	except:
+		print('Method was unable to predict:',method,threshold)
+		Matrix_to_save = pd.DataFrame() # so that main script won't have error and stop code
 
-		train_solution = train_solution.reshape(-1,)
-		test_solution = test_solution.reshape(-1,)
-		clsfr.fit(train_data,train_solution)
-		predictions_t = clsfr.predict(test_data)
-		reg_mse = mean_squared_error(test_solution,predictions_t)
-		R2 = get_r2_python(test_solution,predictions_t)
-	
-	else:
-		print('Error: test_set not True or False.')
-
-	reg_rmse = np.sqrt(reg_mse)
-
-	if result == 'R2':
-		return R2
-	else:
-		print('Error in result option choice. Please chose one of result options.')
+	return Matrix_to_save
 
 
 
-### Regression ###
-def Regression(data,solution,method,result,test_set):
-	data = data.values
-	solution = solution.values 
+### Regression ### (Note: this section has not been verified to work with new 'Main_Running.py')
+def Regression(train_data,train_solution,test_data,test_solution,method):
+	## Fix Data Structure ##
+	train_data = train_data.values
+	train_solution = train_solution.values
+	test_data = test_data.values
+	test_solution = test_solution.values
 
+	## List of Method Options with Initialization ##
 	if method == 'lin_reg': # linear regression
 		from sklearn.linear_model import LinearRegression
 		reg = LinearRegression()
@@ -137,104 +223,113 @@ def Regression(data,solution,method,result,test_set):
 		reg = DecisionTreeRegressor()
 	elif method == 'rdm_for': # random forests
 		from sklearn.ensemble import RandomForestRegressor
-		reg = RandomForestRegressor(n_estimators=100,random_state=3) 
+		reg = RandomForestRegressor(n_estimators=100,random_state=3)
+	elif method == 'ada_bst': # AdaBoost Regressor
+		from sklearn.ensemble import AdaBoostRegressor
+		reg = AdaBoostRegressor(n_estimators=100,random_state=3)
+	elif method == 'grd_bst': # Gradient Boosting Regressor
+		from sklearn.ensemble import GradientBoostingRegressor
+		reg = GradientBoostingRegressor(random_state=3)
+	elif method == 'gss_prc': # Gaussian Process Regressor
+		from sklearn.gaussian_process import GaussianProcessRegressor
+		reg = GaussianProcessRegressor(random_state=3)
+	elif method == 'knl_rdg': # Kernel Ridge Regression
+		from sklearn.kernel_ridge import KernelRidge 
+		reg = KernelRidge()
+	elif method == 'nst_nbr_uni': # K Nearest Neighbors Regressor
+		from sklearn.neighbors import KNeighborsRegressor
+		reg = KNeighborsRegressor(weights='uniform')
+	elif method == 'nst_nbr_dst': # K Nearest Neighbors Regressor
+		from sklearn.neighbors import KNeighborsRegressor
+		reg = KNeighborsRegressor(weights='distance')	
+	elif method == 'rad_nbr_uni': # Radius Neighbor Regressor
+		from sklearn.neighbors import RadiusNeighborsRegressor
+		reg = RadiusNeighborsRegressor(weights='uniform')
+	elif method == 'rad_nbr_dst': # Radius Neighbor Regressor
+		from sklearn.neighbors import RadiusNeighborsRegressor
+		reg = RadiusNeighborsRegressor(weights='distance')
+	elif method == 'mlp_reg':
+		from sklearn.neural_network import MLPRegressor
+		reg = MLPRegressor(random_state=3)
 	else:
 		print('Error: Regression method not recognized.\nPlease pick a valid method key (example: xxx_xxx).')
 	
+	## Preprocessing and Setup ##
 	from sklearn.preprocessing import StandardScaler
 	scaler = StandardScaler()
-	data = scaler.fit_transform(data)
+	data = scaler.fit_transform(train_data)
+	scaler = StandardScaler()
+	test_data = scaler.fit_transform(test_data)
+	solution = train_solution.reshape(-1,)
+	if method == 'ply_reg':
+		data = poly_features.fit_transform(data)
+	reg.fit(data,solution)
 
-	if test_set == False:
-		if method == 'ply_reg':
-			data = poly_features.fit_transform(data)
-
-		solution = solution.reshape(-1,)
-		reg.fit(data,solution)
+	if len(test_data) < 5:
 		predictions = reg.predict(data)
-		reg_mse = mean_squared_error(solution,predictions)
-		R2 = get_r2_python(solution,predictions)
-		if method == 'rdm_for':
-			features = reg.feature_importances_
 	
-	elif test_set == True:
-		from sklearn.model_selection import train_test_split
-		train_data,test_data,train_solution,test_solution = train_test_split(data,solution,test_size=0.3,random_state=0)
+	elif len(test_data) > 5:
 		if method == 'ply_reg':
-			train_data = poly_features.fit_transform(train_data)
-			new_axis = len(train_solution)
-			train_data = train_data.reshape(new_axis,-1)
 			test_data = poly_features.transform(test_data)
-
-		train_solution = train_solution.reshape(-1,)
 		test_solution = test_solution.reshape(-1,)
-		reg.fit(train_data,train_solution)
-		predictions_t = reg.predict(test_data)
-		reg_mse = mean_squared_error(test_solution,predictions_t)
-		R2 = get_r2_python(test_solution,predictions_t)
+		predictions_test = reg.predict(test_data)
+		solution = test_solution
+		predictions = predictions_test
 	
 	else:
-		print('Error: test_set not True or False.')
-
-	reg_rmse = np.sqrt(reg_mse)
+		print('Error: test_set undetermined.')
 	
-	if method == 'lso_reg':
-		print('Non-zero features:',len(reg.coef_[reg.coef_!=0]))
+	Matrix_to_save = pd.DataFrame()
+	Matrix_to_save['Solution'] = solution
+	Matrix_to_save['Predictions'] = predictions
 
-	if result == 'rmse':
-		return reg_rmse
-	elif result == 'R2':
-		return R2
-	elif result == 'features':
-		return features
-	elif result == 'plot':
-		import matplotlib.pyplot as plt
-		if test_set == True:
-			if method == 'ply_reg':
-				data = poly_features.fit_transform(data)
-			reg.fit(data,solution)
-			predictions = reg.predict(data)
-			plt.scatter(solution,predictions,alpha=0.3)
-			plt.scatter(test_solution,predictions_t,color='red',alpha=0.3)
-			# print(len(solution),len(test_solution))
-		else:
-			plt.scatter(solution,predictions,alpha=0.3)
-		plt.title(method)
-		plt.xlabel('Actual Reliability')
-		plt.ylabel('Predicted Reliability')
-		plt.show()
-	else:
-		print('Error in result option choice. Please chose one of result options.')
+	return Matrix_to_save
 
 
 
-def RemovingFeatures(data,solution,num_features):
-	from sklearn.ensemble import RandomForestRegressor
-	from sklearn.preprocessing import StandardScaler
-	reg = RandomForestRegressor(n_estimators=100,random_state=3)
-	features_list = data.columns
+### Remove Certain Number of Features from Data ###
+def RemovingFeatures(data,solution,lead,window,num_features,sol_type,sc,test):
 
-	data2 = data.values
-	solution2 = solution.values 
-
-	scaler = StandardScaler()
-	data2 = scaler.fit_transform(data2)
+	try: # see if feature importances have already been calculated for this combination of parameters
+		features = pd.read_csv('Removed_Features_Lists_Second_Run/Feature_Importances__'+sol_type+'__'+lead+'_'+window+'.csv', index_col=0)
+		important_features_list = features.iloc[:num_features].index
+		data_return = data[important_features_list]
 	
-	solution2 = solution2.reshape(-1,)
-	reg.fit(data2,solution2)
-	features = reg.feature_importances_
-	features_df = pd.DataFrame(features,index=features_list)
-	features_df_ordered = features_df.sort_values([0],ascending=False)
+	except FileNotFoundError: # if feature importances haven't already been calculated
+		print('----Previously created reduced features lists not found. Please wait while one is generated.----')
+		from sklearn.ensemble import RandomForestRegressor
+		from sklearn.preprocessing import StandardScaler
+		reg = RandomForestRegressor(n_estimators=1000,random_state=3) # how many trees are included can be changed to improve accuracy (more trees) or run time (fewer trees)
+		features_list = data.columns
+		data2 = data.values
+		solution2 = solution.values
 
-	important_features_list = features_df_ordered.iloc[:num_features].index
-	data_return = data[important_features_list]
+		scaler = StandardScaler()
+		data2 = scaler.fit_transform(data2)
+		solution2 = solution2.reshape(-1,)
+		
+		reg.fit(data2,solution2)
+		features = reg.feature_importances_
+		features_df = pd.DataFrame(features,index=features_list)
+		features_df_ordered = features_df.sort_values([0],ascending=False)
+		important_features_list = features_df_ordered.iloc[:num_features].index
+		data_return = data[important_features_list]
+		
+		os.makedirs('Removed_Features_Lists_Second_Run', exist_ok=True)
+		features_df_ordered.to_csv('Removed_Features_Lists_Second_Run/Feature_Importances__'+sol_type+'__'+lead+'_'+window+'.csv')
+		data_return.to_csv('Removed_Features_Lists_Second_Run/Removed_Features__'+sol_type+'__'+lead+'_'+window+'.csv')
+
+		if num_features == 500:
+			if test == False:
+				data_return.to_csv('%s/%s-Data_%s-REDUCED.csv'%(Location_to_Save_Matrices,sc,lead), index_col=0)
+			elif test == True:
+				data_return.to_csv('%s/%s-Testing_Data_%s-REDUCED.csv'%(Location_to_Save_Matrices,sc,lead), index_col=0)
 
 	return data_return
 
 
 
-
-### Correlation Matrices ### still need to finish this
+### Correlation Matrices ### 
 def Correlations(Lead,type):
 	from Data_Formatting import Load_Data
 	(Data_L0,Data_L1,Data_L5,Data_L10,Data_L20,
@@ -250,9 +345,6 @@ def Correlations(Lead,type):
 		Lead_s = '_1_'
 	if Lead == 5:
 		Lead_s = '_5_'
-
-	# if type=='full'
-	# if type=='Rel_only'
 
 	Solution_L0_R50.columns = ['Reliability_50']
 	Solution_L1_R50.columns = ['Reliability_50']
@@ -283,17 +375,17 @@ def Correlations(Lead,type):
 	corr_matrix_L10 = C_matrix_L10['Reliability_50'].sort_values(ascending=False)
 	corr_matrix_L20 = C_matrix_L20['Reliability_50'].sort_values(ascending=False)
 
-	# corr_matrix_L0.to_csv('corr_matrix_L0.csv')
-	# corr_matrix_L1.to_csv('corr_matrix_L1.csv')
-	# corr_matrix_L5.to_csv('corr_matrix_L5.csv')
-	# corr_matrix_L10.to_csv('corr_matrix_L10.csv')
-	# corr_matrix_L20.to_csv('corr_matrix_L20.csv')
+	corr_matrix_L0.to_csv('corr_matrix_L0.csv')
+	corr_matrix_L1.to_csv('corr_matrix_L1.csv')
+	corr_matrix_L5.to_csv('corr_matrix_L5.csv')
+	corr_matrix_L10.to_csv('corr_matrix_L10.csv')
+	corr_matrix_L20.to_csv('corr_matrix_L20.csv')
 
-	# C_matrix_L0.to_csv('ALL_corr_matrix_L0.csv')
-	# C_matrix_L1.to_csv('ALL_corr_matrix_L1.csv')
-	# C_matrix_L5.to_csv('ALL_corr_matrix_L5.csv')
-	# C_matrix_L10.to_csv('ALL_corr_matrix_L10.csv')
-	# C_matrix_L20.to_csv('ALL_corr_matrix_L20.csv')
+	C_matrix_L0.to_csv('ALL_corr_matrix_L0.csv')
+	C_matrix_L1.to_csv('ALL_corr_matrix_L1.csv')
+	C_matrix_L5.to_csv('ALL_corr_matrix_L5.csv')
+	C_matrix_L10.to_csv('ALL_corr_matrix_L10.csv')
+	C_matrix_L20.to_csv('ALL_corr_matrix_L20.csv')
 
 
 
